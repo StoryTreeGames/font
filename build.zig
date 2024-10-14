@@ -1,8 +1,9 @@
 const std = @import("std");
 
-// Although this function looks imperative, note that its job is to
-// declaratively construct a build graph that will be executed by an external
-// runner.
+const examples = .{
+    .{ "sample", "examples/sample.zig" },
+};
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -34,12 +35,15 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_lib_unit_tests.step);
 
     const example_step = b.step("example", "Run an example");
-    buildExample(b, "try_it", "examples/test.zig", .{
-        .module = font_mod,
-        .dependsOn = example_step,
-        .target = target,
-        .optimize = optimize,
-    });
+
+    inline for(examples) |example| {
+        buildExample(b, example[0], example[1], .{
+            .module = font_mod,
+            .dependsOn = example_step,
+            .target = target,
+            .optimize = optimize,
+        });
+    }
 }
 
 const Build = struct {
