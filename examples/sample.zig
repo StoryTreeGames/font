@@ -12,21 +12,17 @@ pub fn main() !void {
 
     const alloc = arena.allocator();
 
-    // Load font file into memory
-    var file = try std.fs.cwd().openFile(font_file, .{});
-    defer file.close();
-
-    const size = (try file.stat()).size;
-
-    const buffer = try alloc.alloc(u8, size);
+    const buffer = try font.util.readFile(alloc, font_file);
     defer alloc.free(buffer);
-
-    const read = try file.readAll(buffer);
-    std.debug.assert(read == size);
 
     // Parse font resource
     const resource = try Resource.parse(buffer);
 
     std.debug.print("{any}\n", .{ resource.version });
     std.debug.print("{any}\n", .{ try resource.records.get(0) });
+
+    var records = resource.records.iter();
+    while (try records.next()) |record| {
+        std.debug.print("{s}\n", .{ record.tag });
+    }
 }
