@@ -4,6 +4,8 @@ const font = @import("font");
 const Decoder = font.de.Decoder;
 const Resource = font.de.Resource;
 
+const print = std.debug.print;
+
 const font_file: []const u8 = "assets/Roboto/Roboto-Regular.ttf";
 
 pub fn main() !void {
@@ -18,11 +20,15 @@ pub fn main() !void {
     // Parse font resource
     const resource = try Resource.parse(buffer);
 
-    std.debug.print("{any}\n", .{ resource.version });
-    std.debug.print("{any}\n", .{ try resource.records.get(0) });
+    print("{any}\n", .{ resource.version });
+    // print("{any}\n", .{ try resource.records.get(0) });
+    //
+    // var records = resource.records.iter();
+    // while (try records.next()) |record| {
+    //     print("{s}\n", .{ record.tag });
+    // }
 
-    var records = resource.records.iter();
-    while (try records.next()) |record| {
-        std.debug.print("{s}\n", .{ record.tag });
-    }
+    const cmap = (try resource.tables()).cmap;
+    print("{any}\n", .{cmap});
+    print("{any}\n", .{ cmap.get(0) });
 }

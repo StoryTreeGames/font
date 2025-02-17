@@ -54,7 +54,7 @@ pub const Decoder = struct {
     /// Aquire a lazy mapped view into the underlying data.
     ///
     /// Increments and progresses the decoder.
-    pub fn array(self: *@This(), T: type, count: usize) !View(T) {
+    pub fn view(self: *@This(), T: type, count: usize) !View(T) {
         const size = type_byte_size(T);
         if (self.offset + (size * count) > self.source.len) {
             return DecodeError.OutOfBounds;
@@ -66,16 +66,37 @@ pub const Decoder = struct {
         return .{ .data = self.source[start..self.offset], .count = count };
     }
 
+    pub fn array(self: *@This(), comptime T: type, comptime count: usize) ![count]T {
+        const size: comptime_int = @sizeOf(T);
+        const length = count * size;
+
+        if (length > self.source.len) {
+            return DecodeError.OutOfBounds;
+        }
+
+        var index: usize = 0;
+        var result: [count]T = undefined;
+
+        while (index < count) {
+            const i = index * 2 + self.offset;
+            const value: T = std.mem.readInt(T, &[2]u8{ self.source[i], self.source[i + 1] }, .big);
+            result[index] = value;
+            index += 1;
+        }
+
+        self.offset += length;
+
+        return result;
+    }
+
     /// Get a slice of bytes from the underlying data.
     pub fn slice(self: *@This(), comptime count: usize) ![count]u8 {
         if (self.offset + count > self.source.len) {
             return DecodeError.OutOfBounds;
         }
 
-        var result: [count]u8 = [_]u8 { 0 } ** count;
-        inline for (0..count) |i| {
-            result[i] = self.source[self.offset + i];
-        }
+        var result: [count]u8 = undefined;
+        @memcpy(&result, self.source[self.offset..self.offset+count]);
         defer self.offset += count;
 
         return result;
@@ -88,12 +109,13 @@ fn type_byte_size(T: type) usize {
         f32 => type_byte_size(i32),
         u64 => 8,
         u32 => 4,
+        u24 => 3,
         i32 => 4,
         u16 => 2,
         i16 => 2,
         u8 => 1,
         i8 => 1,
-        else => T.DECODE_SIZE,
+        else => T.FONT_DECODE_BYTES,
     };
 }
 
@@ -116,7 +138,7 @@ fn decode(source: []const u8, T: type) !T {
         },
 
         f32 => {
-            return @as(f32, @floatFromInt(try decode(i32))) / 65536.0;
+            return @as(f32, @floatFromInt(try decode(source, i32))) / 65536.0;
         },
 
         u32 => {
@@ -128,6 +150,16 @@ fn decode(source: []const u8, T: type) !T {
             result |= @as(u32, source[1]) << 16;
             result |= @as(u32, source[2]) << 8;
             result |= @as(u32, source[3]);
+            return result;
+        },
+        u24 => {
+            if (2 >= source.len) {
+                return DecodeError.OutOfBounds;
+            }
+            var result: u24 = 0;
+            result |= @as(u24, source[1]) << 16;
+            result |= @as(u24, source[2]) << 8;
+            result |= @as(u24, source[3]);
             return result;
         },
         i32 => {
@@ -175,7 +207,7 @@ fn decode(source: []const u8, T: type) !T {
         },
 
         else => {
-            const size: usize = T.DECODE_SIZE;
+            const size: usize = T.FONT_DECODE_BYTES;
             if (size - 1 >= source.len) {
                 return DecodeError.OutOfBounds;
             }
@@ -229,7 +261,7 @@ pub fn ViewIter(T: type) type {
         context: *const View(T),
 
         pub fn next(self: *@This()) !?T {
-            if (self.index + 1 >= self.context.len()) {
+            if (self.index >= self.context.len()) {
                 return null;
             }
 
@@ -238,6 +270,22 @@ pub fn ViewIter(T: type) type {
         }
     };
 }
+
+pub const MacStyle = packed struct(u16) {
+    bold: bool = false,
+    italic: bool = false,
+    underline: bool = false,
+    outline: bool = false,
+    shadow: bool = false,
+    condensed: bool = false,
+    extended: bool = false,
+    _7_15: u9 = 0
+};
+
+pub const LocFormat = enum(i16) {
+    Short = 0,
+    Long = 1,
+};
 
 test "parse" {
     const source = [_]u8{ 0, 0, 1, 144, 104, 101, 97, 100, 0, 0, 1, 144, 0, 0, 1, 144 };
@@ -251,9 +299,21 @@ test "parse" {
     try std.testing.expectEqualSlices(u8, &tag, &[4]u8{104, 101, 97, 100});
     try std.testing.expectEqual(decoder.offset, 8);
 
-    const numbers = try decoder.array(u32, 2);
+    const numbers = try decoder.view(u32, 2);
     try std.testing.expectEqual(numbers.len(), 2);
     try std.testing.expectEqual(numbers.is_empty(), false);
     try std.testing.expectEqual(try numbers.get(0), 400);
     try std.testing.expectEqual(try numbers.get(1), 400);
+
+    decoder.offset = 0;
+    const u16Slice = try decoder.array(u16, 8);
+    try std.testing.expectEqual(u16Slice.len, 8);
+    try std.testing.expectEqual(u16Slice[0], 0);
+    try std.testing.expectEqual(u16Slice[1], 400);
+    try std.testing.expectEqual(u16Slice[2], 26725);
+    try std.testing.expectEqual(u16Slice[3], 24932);
+    try std.testing.expectEqual(u16Slice[4], 0);
+    try std.testing.expectEqual(u16Slice[5], 400);
+    try std.testing.expectEqual(u16Slice[6], 0);
+    try std.testing.expectEqual(u16Slice[7], 400);
 }

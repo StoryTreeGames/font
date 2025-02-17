@@ -1,5 +1,6 @@
 const std = @import("std");
 const font = @import("../root.zig");
+const Tables = @import("./table.zig");
 const Decoder = font.de.Decoder;
 
 /// The type of the open type font format.
@@ -21,7 +22,7 @@ pub const Type = enum(u32) {
 /// - offset: byte offset from the beginning of the file/byte array
 /// - length: number of bytes that make up the table
 pub const TableRecord = struct {
-    pub const DECODE_SIZE = 16;
+    pub const FONT_DECODE_BYTES = 16;
 
     tag: [4]u8,
     checksum: u32,
@@ -43,6 +44,7 @@ pub const TableRecord = struct {
 
 /// Header information of an Open Type Font file
 pub const Resource = struct {
+    data: []const u8,
     version: Type,
     num_tables: u16,
     records: font.de.View(TableRecord),
@@ -58,10 +60,17 @@ pub const Resource = struct {
         std.debug.assert(decoder.offset == 12);
 
         return .{
+            .data = data,
             .version = version,
             .num_tables = num_tables,
-            .records = try decoder.array(TableRecord, num_tables),
+            .records = try decoder.view(TableRecord, num_tables),
         };
+    }
+
+    /// Parses the table records returning a structure of known
+    /// OTF font tables and their parsed data if they exist.
+    pub fn tables(self: *const @This()) !Tables {
+        return try Tables.parse(&self.records, self.data);
     }
 };
 
